@@ -46,12 +46,19 @@ T getValidatedInput(const string& prompt, T min_value, T max_value) {
 
 // Struktur data untuk menyimpan informasi kopi
 struct Coffee {
+    string id;
     string nama;
     int stok;
     int harga;
     
     // Konstruktor untuk inisialisasi data kopi
-    Coffee(string n, int s, int h) : nama(n), stok(s), harga(h) {}
+    Coffee(string n, int s, int h) : nama(n), stok(s), harga(h) {
+        // Generate unique ID
+        static int counter = 1;
+        string prefix = n.substr(0, min(3ul, n.length()));
+        transform(prefix.begin(), prefix.end(), prefix.begin(), ::toupper);
+        id = prefix + to_string(counter++);
+    }
 };
 
 // Struktur data untuk menyimpan informasi pengguna
@@ -67,7 +74,7 @@ struct User {
 struct Order {
     string orderId;      // ID unik pesanan
     string username;     // Username pembeli
-    vector<pair<string, int>> items;  // Pasangan (nama kopi, jumlah)
+    vector<pair<string, int>> items;  // Item pesanan (ID kopi, jumlah)
     int totalHarga;      // Total harga pesanan
     string status;       // Status pesanan (menunggu, diproses, selesai, dibatalkan)
     string waktuPesanan; // Waktu pemesanan
@@ -91,27 +98,27 @@ struct Order {
 // Struktur data untuk keranjang belanja
 struct ShoppingCart {
     string username;
-    vector<pair<string, int>> items;  // Pasangan (nama kopi, jumlah)
+    vector<pair<string, int>> items;
     
     ShoppingCart(string user) : username(user) {}
     
-    void addItem(const string& nama, int jumlah) {
+    void addItem(const string& id, int jumlah) {
         // Cek apakah item sudah ada di keranjang
         for (auto& item : items) {
-            if (item.first == nama) {
+            if (item.first == id) {
                 item.second += jumlah;
                 return;
             }
         }
         // Jika belum ada, tambahkan item baru
-        items.push_back(make_pair(nama, jumlah));
+        items.push_back(make_pair(id, jumlah));
     }
     
-    void removeItem(const string& nama) {
+    void removeItem(const string& id) {
         items.erase(
             remove_if(items.begin(), items.end(), 
-                [&nama](const pair<string, int>& item) { 
-                    return item.first == nama; 
+                [&id](const pair<string, int>& item) { 
+                    return item.first == id; 
                 }), 
             items.end()
         );
@@ -184,17 +191,31 @@ private:
     vector<Coffee> inventory;
     
 public:
-    // Fungsi untuk mencari kopi berdasarkan nama menggunakan algoritma binary search
-    int binarySearch(const string& nama) {
+    // Fungsi untuk mencari kopi berdasarkan ID menggunakan algoritma binary search
+    int binarySearch(const string& id) {
         int left = 0;
         int right = inventory.size() - 1;
         
-        // Loop terus menerus hingga selisih antara left dan right adalah 0
         while (left <= right) {
             int mid = left + (right - left) / 2;
-            if (inventory[mid].nama == nama) return mid;
-            if (inventory[mid].nama < nama) left = mid + 1;
-            else right = mid - 1;
+            
+            if (inventory[mid].id == id) {
+                return mid;
+            }
+            
+            if (inventory[mid].id < id) {
+                left = mid + 1;
+            } else {
+                right = mid - 1;
+            }
+        }
+        return -1;
+    }
+
+    // Fungsi bantuan untuk mencari kopi berdasarkan nama (untuk kompatibilitas mundur)
+    int findByName(const string& nama) {
+        for (size_t i = 0; i < inventory.size(); i++) {
+            if (inventory[i].nama == nama) return i;
         }
         return -1;
     }
@@ -225,23 +246,33 @@ public:
     }
 
     // Fungsi untuk mendapatkan stok dan harga kopi berdasarkan nama
-    int getStok(const string& nama) {
-        int index = binarySearch(nama);
+    int getStok(const string& id) {
+        int index = binarySearch(id);
         return (index != -1) ? inventory[index].stok : 0;
     }
 
     // Fungsi untuk mendapatkan harga kopi berdasarkan nama
-    int getHarga(const string& nama) {
-        int index = binarySearch(nama);
+    int getHarga(const string& id) {
+        int index = binarySearch(id);
         return (index != -1) ? inventory[index].harga : 0;
     }
 
     // Fungsi untuk mengurangi stok kopi berdasarkan nama
-    void kurangiStok(const string& nama, int jumlah) {
-        int index = binarySearch(nama);
+    void kurangiStok(const string& id, int jumlah) {
+        int index = binarySearch(id);
         if (index != -1) {
             inventory[index].stok -= jumlah;
         }
+    }
+
+    string getNameById(const string& id) {
+        int index = binarySearch(id);
+        return (index != -1) ? inventory[index].nama : "";
+    }
+
+    string getIdByName(const string& nama) {
+        int index = findByName(nama);
+        return (index != -1) ? inventory[index].id : "";
     }
 
 public:
@@ -253,14 +284,14 @@ public:
             [](const Coffee& a, const Coffee& b) { return a.nama < b.nama; });
         
         inventory.insert(pos, newCoffee);
-        cout << "Kopi berhasil ditambahkan dan diurutkan secara alfabetis!\n";
+        cout << "Kopi berhasil ditambahkan dengan ID: " << newCoffee.id << endl;
     }
     
     // Fungsi untuk menampilkan stok kopi yang tersedia
     void tampilkanStok() {
         cout << "\nDaftar Stok Kopi (Urut Alfabetis)\n";
         cout << "--------------------------------------------------------------\n";
-        cout << setw(4) << "No" << setw(12) << "Nama" 
+        cout << setw(4) << "No" << setw(8) << "ID" << setw(12) << "Nama" 
              << setw(12) << "Stok(g)" << setw(20) << "Harga/10g\n";
         cout << "--------------------------------------------------------------\n";
         
@@ -270,7 +301,9 @@ public:
             return;
         }
         for (size_t i = 0; i < inventory.size(); i++) {
-            cout << setw(4) << i+1 << setw(12) << inventory[i].nama 
+            cout << setw(4) << i+1 
+                 << setw(8) << inventory[i].id
+                 << setw(12) << inventory[i].nama 
                  << setw(12) << inventory[i].stok 
                  << setw(20) << formatRupiah(inventory[i].harga) << endl;
         }
@@ -309,18 +342,10 @@ public:
         cout << "\nUrutan kopi berdasarkan stok (terendah ke tertinggi):\n";
         
         for (const auto& kopi : sortedInventory) {
-            cout << kopi.nama << ": " << kopi.stok << "g - Nilai: " 
+            cout << kopi.id << " - " << kopi.nama << ": " << kopi.stok << "g - Nilai: " 
                  << formatRupiah((kopi.stok/10) * kopi.harga) << endl;
         }
     }
-    
-    // void initializeData() {
-    //     tambahKopi("Arabica", 100, 6000);
-    //     tambahKopi("Robusta", 150, 4500);
-    //     tambahKopi("Liberica", 75, 7000);
-    //     tambahKopi("Gayo", 80, 8000);
-    //     tambahKopi("Toraja", 90, 9000);
-    // }
 };
 
 // Kelas untuk mengelola pesanan dan keranjang
@@ -328,7 +353,7 @@ class OrderManager {
 private:
     vector<Order> orders;
     vector<ShoppingCart> carts;
-    InventoryManager& inventoryManager;  // Referensi ke inventory manager
+    InventoryManager& inventoryManager;
 
 public:
     OrderManager(InventoryManager& invManager) : inventoryManager(invManager) {}
@@ -346,24 +371,24 @@ public:
     }
     
     // Tambah item ke keranjang
-    bool tambahKeKeranjang(const string& username, const string& namaKopi, int jumlah) {
+    bool tambahKeKeranjang(const string& username, const string& id, int jumlah) {
         // Validasi stok di inventory
         auto& inventory = inventoryManager;
-        int index = inventory.binarySearch(namaKopi);
+        string namaKopi = inventory.getNameById(id);
         
-        if (index == -1) {
+        if (id.empty()) {
             cout << "Kopi tidak ditemukan!\n";
             return false;
         }
         
-        if (jumlah > inventory.getStok(namaKopi)) {
+        if (jumlah > inventory.getStok(id)) {
             cout << "Stok tidak mencukupi!\n";
             return false;
         }
         
         // Tambahkan ke keranjang
         auto& cart = getOrCreateCart(username);
-        cart.addItem(namaKopi, jumlah);
+        cart.addItem(id, jumlah);
         cout << "Berhasil menambahkan " << jumlah << "g " << namaKopi << " ke keranjang.\n";
         return true;
     }
@@ -382,9 +407,9 @@ public:
         auto& inventory = inventoryManager;
         
         for (const auto& item : cart.items) {
-            int index = inventory.binarySearch(item.first);
-            if (index == -1 || item.second > inventory.getStok(item.first)) {
-                cout << "Stok " << item.first << " tidak mencukupi!\n";
+            int stok = inventory.getStok(item.first);
+            if (stok == 0 || item.second > stok) {
+                cout << "Stok " << inventory.getNameById(item.first) << " tidak mencukupi!\n";
                 return false;
             }
             
@@ -423,7 +448,7 @@ public:
                 cout << "Waktu: " << order.waktuPesanan;
                 cout << "Detail Pesanan:\n";
                 for (const auto& item : order.items) {
-                    cout << "  - " << item.first << ": " << item.second << "g\n";
+                    cout << "  - " << inventoryManager.getNameById(item.first) << ": " << item.second << "g\n";
                 }
                 cout << "Total Harga: " << formatRupiah(order.totalHarga) << "\n\n";
             }
@@ -446,7 +471,7 @@ public:
             cout << "Waktu: " << order.waktuPesanan;
             cout << "Detail Pesanan:\n";
             for (const auto& item : order.items) {
-                cout << "  - " << item.first << ": " << item.second << "g\n";
+                cout << "  - " << inventoryManager.getNameById(item.first) << ": " << item.second << "g\n";
             }
             cout << "Total Harga: " << formatRupiah(order.totalHarga) << "\n\n";
         }
@@ -510,14 +535,13 @@ void handleAuth(UserManager& userManager) {
 int main() {
     InventoryManager manager;
     UserManager userManager;
-    // Tambahkan OrderManager
     OrderManager orderManager(manager);
     char pilihan;
     
     cout << "===== Aplikasi Kasir Cafe =====\n";
     
     while (true) {
-        // Handle authentication first
+        // Melakukan autentikasi jika belum login
         if (!userManager.isLoggedIn()) {
             handleAuth(userManager);
             continue;
@@ -608,14 +632,14 @@ int main() {
                     break;
                     
                 case '2': {
-                    string nama;
-                    cout << "Masukkan nama kopi: ";
+                    string id;
+                    cout << "Masukkan id kopi: ";
                     cin.ignore();
-                    getline(cin, nama);
+                    getline(cin, id);
                 
                     int jumlah = getValidatedInput<int>("Masukkan jumlah (gram): ", 1, 1000);
                     
-                    orderManager.tambahKeKeranjang(userManager.getCurrentUsername(), nama, jumlah);
+                    orderManager.tambahKeKeranjang(userManager.getCurrentUsername(), id, jumlah);
                     break;
                 }
                 
@@ -626,7 +650,7 @@ int main() {
                         cout << "Keranjang kosong!\n";
                     } else {
                         for (const auto& item : cart.items) {
-                            cout << item.first << ": " << item.second << "g\n";
+                            cout << manager.getNameById(item.first) << ": " << item.second << "g\n";
                         }
                     }
                     break;
